@@ -1,0 +1,62 @@
+name: Test Bot
+
+# Manual smoke test against the bot-testing-area tournament
+# (https://www.metaculus.com/tournament/bot-testing-area/).
+# Runs the offline unit tests first, then forecasts on the test questions.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = forecast but do NOT post to Metaculus"
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  forecast_job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Unit tests (offline, no API calls)
+        run: uv run --with pytest python -m pytest tests -q
+      - name: Run bot on bot-testing-area
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            uv run python main.py --mode test_questions --dry-run
+          else
+            uv run python main.py --mode test_questions
+          fi
+        env:
+          # Secrets: Settings -> Secrets and variables -> Actions -> Secrets
+          METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
+          ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
+          ASKNEWS_API_KEY: ${{ secrets.ASKNEWS_API_KEY }}
+          # Optional settings: Settings -> Secrets and variables -> Actions -> Variables
+          # (unset = default from bot_config.py)
+          BOT_LLM_PROVIDER: ${{ vars.BOT_LLM_PROVIDER }}
+          BOT_MODEL: ${{ vars.BOT_MODEL }}
+          BOT_PARSER_MODEL: ${{ vars.BOT_PARSER_MODEL }}
+          BOT_EFFORT: ${{ vars.BOT_EFFORT }}
+          BOT_RESEARCH: ${{ vars.BOT_RESEARCH }}
+          BOT_PREDICTIONS_PER_QUESTION: ${{ vars.BOT_PREDICTIONS_PER_QUESTION }}
+          BOT_MAX_COST_PER_QUESTION_USD: ${{ vars.BOT_MAX_COST_PER_QUESTION_USD }}
+          BOT_MAX_COST_PER_RUN_USD: ${{ vars.BOT_MAX_COST_PER_RUN_USD }}
+          BOT_MAX_QUESTIONS_PER_RUN: ${{ vars.BOT_MAX_QUESTIONS_PER_RUN }}
